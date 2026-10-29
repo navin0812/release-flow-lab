@@ -1,0 +1,29 @@
+# Release flow: record that UAT passed for the image UAT runs now.
+# Writes commit status "uat-signoff"; prd deploys check it.
+name: UAT sign-off
+run-name: UAT sign-off ${{ inputs.image_tag }} by @${{ github.actor }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image UAT runs now, e.g. v1.1.0-rc.1-amd64"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  statuses: write
+  deployments: read
+
+jobs:
+  uat-signoff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sign off
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_MANAGERS: ${{ vars.RELEASE_MANAGERS }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: python3 -I .github/scripts/release.py uat-signoff "$IMAGE_TAG"

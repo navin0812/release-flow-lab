@@ -1,0 +1,33 @@
+name: register_deploy_dx (lab stand-in)
+description: >
+  Stand-in for the org's deploy-actions/register_deploy_dx. Same inputs.
+  Writes the record to the job summary instead of the DTS API.
+inputs:
+  app_category:
+    required: true
+  deploy_success:
+    required: true
+  env:
+    required: true
+  product_name:
+    required: true
+  service:
+    required: true
+  dts_base_url:
+    description: Ignored in the lab
+    required: false
+  dts_api_token:
+    description: Ignored in the lab
+    required: false
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        OK: ${{ inputs.deploy_success }}
+        ENV_NAME: ${{ inputs.env }}
+        PRODUCT: ${{ inputs.product_name }}
+        SERVICE: ${{ inputs.service }}
+      run: |
+        echo "Register deploy: product=$PRODUCT service=$SERVICE env=$ENV_NAME success=$OK"
+        echo "Deploy record: \`$PRODUCT / $SERVICE\` → \`$ENV_NAME\`, success=\`$OK\`" >> "$GITHUB_STEP_SUMMARY"

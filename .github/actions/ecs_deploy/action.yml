@@ -1,0 +1,63 @@
+name: ecs_deploy (lab stand-in)
+description: >
+  Stand-in for the org's deploy-actions/ecs_deploy. Same inputs.
+  Renders the task definition from the checked-out ref with the new image,
+  then records the deploy as a GitHub Deployment on the job's environment.
+  The environment's "deployment status" is the lab's version of "what ECS runs".
+inputs:
+  cluster_name:
+    required: true
+  container_name:
+    required: true
+  image_uri:
+    required: true
+  role_to_assume:
+    description: Ignored in the lab (no AWS)
+    required: false
+  service_name:
+    required: true
+  taskdef_path:
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        CONTAINER: ${{ inputs.container_name }}
+        IMAGE: ${{ inputs.image_uri }}
+        TASKDEF: ${{ inputs.taskdef_path }}
+        CLUSTER: ${{ inputs.cluster_name }}
+        SERVICE: ${{ inputs.service_name }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        jq --arg c "$CONTAINER" --arg i "$IMAGE" \
+          '(.containerDefinitions[] | select(.name == $c) | .image) = $i' \
+          "$TASKDEF" > rendered-taskdef.json
+        jq -e --arg c "$CONTAINER" '.containerDefinitions[] | select(.name == $c)' rendered-taskdef.json >/dev/null \
+          || { echo "::error::container $CONTAINER not in $TASKDEF"; exit 1; }
+        {
+          echo "### Deployed"
+          echo "| Field | Value |"
+          echo "| --- | --- |"
+          echo "| Cluster / service | \`$CLUSTER\` / \`$SERVICE\` |"
+          echo "| Image | \`$IMAGE\` |"
+          echo "| Task definition | \`$TASKDEF\` from \`$GITHUB_REF_NAME\` @ \`${GITHUB_SHA::7}\` |"
+        } >> "$GITHUB_STEP_SUMMARY"
+        echo "Rendered task definition (lab: no ECS call):"
+        cat rendered-taskdef.json
+
+        # Lab: record "what this env runs" as a GitHub Deployment.
+        # The env name comes from the taskdef path build/<env>/taskdef.json.
+        ENV_NAME=$(basename "$(dirname "$TASKDEF")")
+        TAG="${IMAGE##*:}"
+        COMMIT=$(gh api "repos/$GITHUB_REPOSITORY/commits/$(
+          case "$TAG" in sha-*-amd64) t="${TAG%-amd64}"; echo "${t##*-}";; *) echo "${TAG%-amd64}";; esac
+        )" --jq .sha)
+        ID=$(jq -n --arg ref "$COMMIT" --arg env "$ENV_NAME" --arg img "$TAG" \
+          '{ref: $ref, environment: $env, task: "deploy:image", auto_merge: false,
+            required_contexts: [], payload: {image: $img}, description: $img}' \
+          | gh api -X POST "repos/$GITHUB_REPOSITORY/deployments" --input - --jq .id)
+        gh api -X POST "repos/$GITHUB_REPOSITORY/deployments/$ID/statuses" \
+          -f state=success -F auto_inactive=true -f description="$TAG" >/dev/null
+        echo "Recorded deployment $ID: $ENV_NAME runs $TAG ($COMMIT)"

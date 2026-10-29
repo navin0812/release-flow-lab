@@ -1,0 +1,34 @@
+name: ecr_tag_validation (lab stand-in)
+description: >
+  Stand-in for the org's deploy-actions/ecr_tag_validation. Same inputs.
+  Fails if the image tag does not exist in GHCR.
+inputs:
+  image_tag:
+    required: true
+  registry:
+    description: Ignored in the lab (no ECR)
+    required: false
+  repo_name:
+    description: Image repository URI, e.g. ghcr.io/owner/repo
+    required: true
+  role_to_assume:
+    description: Ignored in the lab (no AWS)
+    required: false
+runs:
+  using: composite
+  steps:
+    - uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+    - shell: bash
+      env:
+        IMAGE: ${{ inputs.repo_name }}:${{ inputs.image_tag }}
+      run: |
+        if docker buildx imagetools inspect "$IMAGE" >/dev/null 2>&1; then
+          echo "Image tag found: $IMAGE"
+        else
+          echo "::error::Image tag not found: $IMAGE"
+          exit 1
+        fi

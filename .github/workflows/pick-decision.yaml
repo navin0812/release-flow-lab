@@ -1,0 +1,20 @@
+# Release flow: every PR to main needs a pick decision label.
+# Required status check "pick-decision" (ruleset on main).
+name: Pick decision
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  pick-decision:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check pick label
+        run: python3 -I .github/scripts/release.py check-labels

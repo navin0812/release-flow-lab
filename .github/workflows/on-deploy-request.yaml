@@ -1,0 +1,90 @@
+# Mirrors the production repo's .github/workflows/on-deploy-request.yaml.
+# Every difference from the real file is marked "lab:".
+name: On deploy request
+run-name: Deploy ${{ inputs.image_tag }} to ${{ inputs.environment }} by @${{ github.actor }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "The environment to which you want to deploy a specific build"
+        type: environment
+        required: true
+      image_tag:
+        description: "The image/artifact tag that is to be deployed to the target environment"
+        type: string
+        required: true
+      emergency_reason: # lab: new release-flow input
+        description: "prd only: deploy without UAT sign-off. Give the incident and reason."
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write
+  packages: read # lab: images come from GHCR instead of ECR
+  deployments: write # lab: ecs_deploy stand-in records what each env runs
+  statuses: read # lab: release_gate reads the uat-signoff status
+
+jobs:
+  validation:
+    runs-on:
+      - ubuntu-latest # lab: real runner is a self-hosted org runner
+
+    steps:
+      - uses: actions/checkout@v4 # lab: needed to load the local stand-in action
+      - uses: ./.github/actions/ecr_tag_validation # lab: real is the org's ecr_tag_validation action @v2
+        with:
+          image_tag: ${{ inputs.image_tag }}
+          registry: "unused" # lab: real value is the ECR account ID
+          repo_name: ${{ vars.ECR_REPO_NAME }}
+          role_to_assume: ${{ vars.GHA_ROLE_ARN }}
+
+  release_gate: # lab: new release-flow job; prd only takes a UAT-signed image
+    runs-on:
+      - ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check UAT sign-off
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_MANAGERS: ${{ vars.RELEASE_MANAGERS }}
+          TARGET_ENV: ${{ inputs.environment }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          EMERGENCY: ${{ inputs.emergency_reason }}
+        run: python3 -I .github/scripts/release.py release-gate "$TARGET_ENV" "$IMAGE_TAG" --emergency "$EMERGENCY"
+
+  deploy:
+    needs: [validation, release_gate] # lab: real is "needs: validation"
+    runs-on:
+      - ubuntu-latest # lab: real runner is a self-hosted org runner
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4 # lab: needed to load the local stand-in action
+      - uses: ./.github/actions/ecs_deploy # lab: real is the org's ecs_deploy action @v2
+        with:
+          cluster_name: ${{ vars.CLUSTER_NAME }}
+          container_name: ${{ vars.CONTAINER_NAME }}
+          image_uri: ${{ vars.ECR_URI }}:${{ inputs.image_tag }}
+          role_to_assume: ${{ vars.DEPLOYER_ROLE_ARN }}
+          service_name: ${{ vars.SERVICE_NAME }}
+          taskdef_path: ${{ vars.TASKDEF_PATH }}
+
+  register_deploy_dx:
+    if: ${{ success() || failure() }}
+    needs: deploy
+    runs-on:
+      - ubuntu-latest # lab: real runner is a self-hosted org runner
+    steps:
+      - uses: actions/checkout@v4 # lab: needed to load the local stand-in action
+      - name: Register deployment
+        uses: ./.github/actions/register_deploy_dx # lab: real is the org's register_deploy_dx action @c2e86b6 (v3.0.2)
+        with:
+          app_category: web
+          deploy_success: ${{ needs.deploy.result == 'success' }}
+          env: ${{ inputs.environment }}
+          product_name: Lab
+          service: Release Flow Lab
+          dts_base_url: ${{ vars.DTS_BASE_URL }}
+          dts_api_token: ${{ secrets.DTS_API_TOKEN }}

@@ -1,0 +1,55 @@
+name: docker_build_push (lab stand-in)
+description: >
+  Stand-in for the org's deploy-actions/docker_build_push. Same inputs.
+  Pushes to GHCR instead of ECR. AWS-only inputs are accepted and ignored.
+inputs:
+  docker_meta_tags:
+    description: docker/metadata-action tags expression
+    required: true
+  docker_build_context:
+    required: true
+  docker_build_platforms:
+    required: true
+  dockerfile_path:
+    required: true
+  ecr_registries:
+    description: Ignored in the lab (no ECR)
+    required: false
+  ecr_uri:
+    description: Image repository URI, e.g. ghcr.io/owner/repo
+    required: true
+  role_to_assume:
+    description: Ignored in the lab (no AWS)
+    required: false
+outputs:
+  tags:
+    description: Full image reference that was pushed
+    value: ${{ steps.meta.outputs.tags }}
+  digest:
+    description: Image digest
+    value: ${{ steps.build.outputs.digest }}
+runs:
+  using: composite
+  steps:
+    # The calling workflow checks out the repo (needed to load this local action).
+    - id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ inputs.ecr_uri }}
+        tags: ${{ inputs.docker_meta_tags }}
+        flavor: latest=false
+    - uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+    - uses: docker/setup-buildx-action@v3
+    - id: build
+      uses: docker/build-push-action@v6
+      with:
+        context: ${{ inputs.docker_build_context }}
+        file: ${{ inputs.dockerfile_path }}
+        platforms: ${{ inputs.docker_build_platforms }}
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}

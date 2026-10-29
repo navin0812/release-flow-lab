@@ -1,0 +1,39 @@
+# Release flow: merge the final tag prd runs into an open release branch.
+# Use after a hotfix ships on an older release line.
+name: Merge forward
+run-name: Merge forward into release/v${{ inputs.line }}${{ inputs.dry_run && ' (dry run)' || '' }} by @${{ github.actor }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      line:
+        description: "Open release line to update, X.Y (branch release/vX.Y)"
+        type: string
+        required: true
+      dry_run:
+        description: "Show what would change; push nothing"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  deployments: read
+
+concurrency:
+  group: release-manager
+  cancel-in-progress: false
+
+jobs:
+  merge-forward:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Merge forward
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_MANAGERS: ${{ vars.RELEASE_MANAGERS }}
+          LINE: ${{ inputs.line }}
+          DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: python3 -I .github/scripts/release.py merge-forward "$LINE" $DRY_RUN

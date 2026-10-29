@@ -1,0 +1,12 @@
+{
+  "family": "lab-prd",
+  "cpu": "1024",
+  "memory": "2048",
+  "containerDefinitions": [
+    {
+      "name": "lab-container-prd",
+      "image": "PLACEHOLDER",
+      "essential": true
+    }
+  ]
+}

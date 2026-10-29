@@ -1,0 +1,34 @@
+# Mirrors the production repo's .github/workflows/on-release.yaml.
+# Every difference from the real file is marked "lab:".
+name: On release
+
+on:
+  release:
+    types:
+      - released
+      - prereleased
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write # lab: images go to GHCR instead of ECR
+
+jobs:
+  build-x86:
+    runs-on:
+      - ubuntu-latest # lab: real runner is a self-hosted org runner
+    outputs:
+      tags: ${{ steps.docker-build-push.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v4 # lab: needed to load the local stand-in action
+      - name: Build Docker image
+        id: docker-build-push
+        uses: ./.github/actions/docker_build_push # lab: real is the org's docker_build_push action @v2
+        with:
+          docker_meta_tags: type=raw,value={{tag}},prefix=,suffix=-amd64
+          docker_build_context: ${{ github.workspace }}
+          docker_build_platforms: linux/amd64
+          dockerfile_path: ${{ github.workspace }}/Dockerfile
+          ecr_registries: "unused" # lab: real value lists the ECR account IDs
+          ecr_uri: ${{ vars.ECR_URI }}
+          role_to_assume: ${{ vars.GHA_ROLE_ARN }}
