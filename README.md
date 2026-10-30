@@ -12,20 +12,32 @@ and adds release-manager workflows. Every difference from production is marked
 | Self-hosted runner | `ubuntu-latest` |
 | Org deploy-actions | `.github/actions/*` with the same inputs |
 
-## Release-manager workflows
+## Release flow
 
-| Workflow | Who | What |
+```
+Release flow → start   release/vX.Y.Z from the latest prd tag; label PRs not yet in prd
+merge PRs              pick-decision adds pick/release/vX.Y.Z on open (pick/none opts out)
+Release flow → uat     pick labelled PRs, revert unlabelled ones, tag vX.Y.Z-rc.N, build image
+On deploy request      environment uat, image_tag vX.Y.Z-rc.N-amd64
+Release flow → prd     same sync, tag vX.Y.Z (Latest), build image, delete branch + label
+On deploy request      environment prd, image_tag vX.Y.Z-amd64
+```
+
+| Workflow | Trigger | What |
 | --- | --- | --- |
-| Pick decision | PR check | PR to `main` needs `pick/release/vX.Y.Z` or `pick/none` |
-| Prepare rc | release manager | sync `release/vX.Y.Z` to its label, tag `vX.Y.Z-rc.N`, draft pre-release |
-| Merge forward | release manager | merge the tag prd runs into an open release branch (`release/vX.Y.Z`) |
-| UAT sign-off | release manager | mark the image UAT runs as passed |
-| On deploy request | anyone, prd needs approval | prd only takes a signed-off image (or `emergency_reason`) |
-| Finalize release | release manager | tag `vX.Y.Z` on the commit prd runs, draft release, create the next pick labels (next patch, minor, major) |
-| Release status | anyone | what each env runs, state of each pick label |
+| Pick decision | open PR to `main` (required check) | On open, adds the label of the open mainline release. Passes with `pick/release/vX.Y.Z` or `pick/none`. |
+| Release flow | manual: `target` start / uat / prd | See above. `version` is optional. `exclude_prs` drops merged PRs from the release. `dry_run` pushes nothing. |
+| On release | release published, or dispatched by Release flow | Builds `<tag>-amd64`. |
+| On deploy request | manual | Deploys an image tag to an environment. |
+
+Rules:
+
+- **Version.** `start` with no version → next major after the latest prd tag. Type `X.Y.Z+1` for a hotfix.
+- **Mainline vs hotfix.** Mainline = open branch with patch 0; new PRs get its label. Hotfix PRs are labelled by hand.
+- **Drop a PR.** Remove its pick label (works on merged PRs too), or list it in `exclude_prs`, then run `uat` or `prd`. The pick is reverted. The next `start` labels it again unless it has `pick/none`.
+- **Conflict.** The run stops, pushes nothing, and labels the PR `pick-conflict/release/vX.Y.Z`.
+- **prd without UAT.** If the branch changed after the last rc, `prd` still ships and warns in the release notes.
 
 Release managers: repo variable `RELEASE_MANAGERS` (comma-separated logins).
-State lives in GitHub: labels, Deployments, the `uat-signoff` commit status.
+State lives in GitHub: tags, `release/v*` branches, PR labels, `-x` cherry-pick trailers.
 Logic: `.github/scripts/release.py`.
-
-Steps to follow: the Runbook in the owner's notes.
