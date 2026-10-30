@@ -1,4 +1,4 @@
-# Release flow: sync release/vX.Y to its pick label and tag the next rc.
+# Release flow: sync release/vX.Y.Z to its pick label and tag the next rc.
 # Drafts the pre-release; publishing it starts "On release" (image build).
 name: Prepare rc
 run-name: Prepare rc v${{ inputs.version }}${{ inputs.dry_run && ' (dry run)' || '' }} by @${{ github.actor }}
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to prepare, X.Y.Z (picks label pick/release/vX.Y)"
+        description: "Version to prepare, X.Y.Z (branch release/vX.Y.Z, label pick/release/vX.Y.Z)"
         type: string
         required: true
       dry_run:

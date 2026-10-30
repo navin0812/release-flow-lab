@@ -17,6 +17,7 @@ on:
 
 permissions:
   contents: write
+  issues: write # create the next pick/release/vX.Y.Z labels
   deployments: read
 
 concurrency:

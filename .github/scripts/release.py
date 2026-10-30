@@ -4,15 +4,16 @@
 Runs inside GitHub Actions (needs GITHUB_REPOSITORY, GH_TOKEN, gh, git with
 full history). State lives in GitHub, not in files:
 
-  pick decision   PR labels pick/release/vX.Y | pick/none
-  pick state      PR labels picked/release/vX.Y | pick-conflict/release/vX.Y
+  pick decision   PR labels pick/release/vX.Y.Z | pick/none
+  pick state      PR labels picked/release/vX.Y.Z | pick-conflict/release/vX.Y.Z
+                  (one release branch per full version: release/vX.Y.Z)
   what env runs   newest successful Deployment with task "deploy:image"
                   (written by .github/actions/ecs_deploy)
   UAT sign-off    commit status "uat-signoff" on the image's commit
 
     release.py check-labels                      (pull_request event)
     release.py prepare-rc X.Y.Z [--dry-run]
-    release.py merge-forward X.Y [--dry-run]
+    release.py merge-forward X.Y.Z [--dry-run]
     release.py uat-signoff IMAGE_TAG
     release.py release-gate ENV IMAGE_TAG [--emergency REASON]
     release.py finalize X.Y.Z [--dry-run]
@@ -28,7 +29,7 @@ import sys
 REPO = os.environ.get("GITHUB_REPOSITORY", "")
 ACTOR = os.environ.get("GITHUB_ACTOR", "")
 FINAL_TAG = re.compile(r"^v\d+\.\d+\.\d+$")
-PICK_LABEL = re.compile(r"^pick/(release/v\d+\.\d+)$")
+PICK_LABEL = re.compile(r"^pick/(release/v\d+\.\d+\.\d+)$")
 PICK, PICKED, CONFLICT, NONE = "pick/", "picked/", "pick-conflict/", "pick/none"
 SIGNOFF = "uat-signoff"
 
@@ -158,6 +159,19 @@ def set_labels(changes):
             run("gh", "pr", "edit", str(pr), "--repo", REPO, "--remove-label", label, check=False)
 
 
+def next_pick_labels(ver):
+    """Pick labels to have ready once vX.Y.Z ships: next patch, next minor, next major."""
+    x, y, z = map(int, ver.split("."))
+    return [f"{PICK}release/v{x}.{y}.{z + 1}", f"{PICK}release/v{x}.{y + 1}.0",
+            f"{PICK}release/v{x + 1}.0.0"]
+
+
+def ensure_pick_labels(ver):
+    for label in next_pick_labels(ver):
+        run("gh", "label", "create", label, "--repo", REPO, "--force", "--color", "1d76db",
+            "--description", f"Ship this PR on {label[len(PICK):]}")
+
+
 def signed_off(commit):
     for s in api(f"repos/{REPO}/commits/{commit}/statuses?per_page=100"):
         if s["context"] == SIGNOFF:
@@ -191,12 +205,12 @@ def cmd_check_labels(a):
     labels = {l["name"] for l in event["pull_request"]["labels"]}
     picks = sorted(l for l in labels if l.startswith(PICK))
     if not picks:
-        fail("Add a pick decision: pick/release/vX.Y (ship on that branch) or pick/none.")
+        fail("Add a pick decision: pick/release/vX.Y.Z (ship on that branch) or pick/none.")
     if NONE in picks and len(picks) > 1:
         fail(f"pick/none cannot be combined with {', '.join(p for p in picks if p != NONE)}")
     bad = [p for p in picks if p != NONE and not PICK_LABEL.match(p)]
     if bad:
-        fail(f"{', '.join(bad)}: use pick/ + a release branch name, e.g. pick/release/v1.1")
+        fail(f"{', '.join(bad)}: use pick/ + a release branch name, e.g. pick/release/v1.1.0")
     say(f"✅ pick decision: {', '.join(picks)}")
 
 
@@ -205,8 +219,7 @@ def cmd_prepare_rc(a):
     ver = a.version.lstrip("v")
     if not re.match(r"^\d+\.\d+\.\d+$", ver):
         fail(f"{a.version}: use X.Y.Z")
-    x, y, z = map(int, ver.split("."))
-    branch = f"release/v{x}.{y}"
+    branch = f"release/v{ver}"
     want, done, bad = PICK + branch, PICKED + branch, CONFLICT + branch
     mode = "DRY RUN, nothing is pushed" if a.dry_run else "live"
     say(f"## prepare-rc v{ver} ({mode})")
@@ -218,8 +231,6 @@ def cmd_prepare_rc(a):
     prd_tag = final_tag_at(prd["commit"])
 
     if git("ls-remote", "--heads", "origin", branch) == "":
-        if z != 0:
-            fail(f"{branch} does not exist; a patch needs its release branch")
         if not prd_tag:
             fail(f"prd runs {prd['image']}, which has no final tag; finalize or roll back first")
         git("switch", "-q", "-c", branch, prd_tag)
@@ -229,7 +240,7 @@ def cmd_prepare_rc(a):
 
     if not is_ancestor(prd["commit"], "HEAD"):
         fail(f"{branch} does not contain what prd runs ({prd_tag or prd['image']}). "
-             f"Run 'Merge forward' for {x}.{y} first.")
+             f"Run 'Merge forward' for {ver} first.")
 
     base = git("describe", "--tags", "--abbrev=0", "--match", "v[0-9]*", "--exclude", "*-*", "HEAD")
     prs = merged_prs()
@@ -292,8 +303,10 @@ def cmd_prepare_rc(a):
 
 def cmd_merge_forward(a):
     require_release_manager()
-    x, y = map(int, a.line.lstrip("v").split("."))
-    branch = f"release/v{x}.{y}"
+    ver = a.version.lstrip("v")
+    if not re.match(r"^\d+\.\d+\.\d+$", ver):
+        fail(f"{a.version}: use X.Y.Z")
+    branch = f"release/v{ver}"
     say(f"## merge-forward into {branch} ({'DRY RUN' if a.dry_run else 'live'})")
     git("fetch", "-q", "--tags", "--force", "origin")
     if git("ls-remote", "--heads", "origin", branch) == "":
@@ -373,12 +386,15 @@ def cmd_finalize(a):
     notes = notes.split("\nNext:")[0] + f"\nprd runs `{prd['image']}`. This release tags the same commit.\n"
     if a.dry_run:
         say(f"- would tag `{tag}` on `{prd['commit'][:7]}` (same as `{rc}`) and draft the release")
+        say(f"- would create labels: {', '.join(next_pick_labels(ver))}")
         return
     git("tag", "-a", tag, prd["commit"], "-m", tag)
     git("push", "-q", "origin", tag)
     run("gh", "release", "create", tag, "--repo", REPO, "--verify-tag", "--draft", "--latest",
         "--title", tag, "--notes", notes)
     say(f"- tagged `{tag}` on `{prd['commit'][:7]}` and drafted the release")
+    ensure_pick_labels(ver)
+    say(f"- created labels: {', '.join(next_pick_labels(ver))}")
     say(f"**Next:** publish it (`gh release edit {tag} --draft=false`). "
         f"`On release` then builds `{tag}-amd64`. Do not deploy that image; prd keeps `{prd['image']}`.")
 
@@ -405,7 +421,7 @@ def main():
     s = p.add_subparsers(dest="cmd", required=True)
     s.add_parser("check-labels")
     q = s.add_parser("prepare-rc"); q.add_argument("version"); q.add_argument("--dry-run", action="store_true")
-    q = s.add_parser("merge-forward"); q.add_argument("line"); q.add_argument("--dry-run", action="store_true")
+    q = s.add_parser("merge-forward"); q.add_argument("version"); q.add_argument("--dry-run", action="store_true")
     q = s.add_parser("uat-signoff"); q.add_argument("image")
     q = s.add_parser("release-gate"); q.add_argument("env"); q.add_argument("image")
     q.add_argument("--emergency", default="")
