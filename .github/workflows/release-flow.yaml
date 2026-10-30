@@ -1,0 +1,57 @@
+# Release flow: one entry point for every release step.
+#   start  cut release/vX.Y.Z from the latest prd tag, label PRs not yet in prd
+#   uat    sync the branch to its label (pick / revert), tag vX.Y.Z-rc.N, build image
+#   prd    sync again, tag vX.Y.Z, publish Latest, build image, delete branch + label
+# Deploys stay manual: 'On deploy request' with the image_tag the summary prints.
+name: Release flow
+run-name: Release flow ${{ inputs.target }}${{ inputs.version && format(' v{0}', inputs.version) || '' }}${{ inputs.dry_run && ' (dry run)' || '' }} by @${{ github.actor }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "start: open a release | uat: build a release candidate | prd: ship the release"
+        type: choice
+        options: [start, uat, prd]
+        required: true
+      version:
+        description: "X.Y.Z. Empty: start = next major, uat/prd = the open release. Hotfix: start with X.Y.Z+1"
+        type: string
+        required: false
+        default: ""
+      exclude_prs:
+        description: "uat/prd only: merged PR numbers to drop from this release, e.g. 12,15"
+        type: string
+        required: false
+        default: ""
+      dry_run:
+        description: "Show what would change; push nothing"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write # push branch and tags, create releases
+  issues: write # create and delete pick labels
+  pull-requests: write # add and remove pick labels
+  actions: write # dispatch 'On release' (release events from GITHUB_TOKEN start no runs)
+
+concurrency:
+  group: release-flow
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Release flow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_MANAGERS: ${{ vars.RELEASE_MANAGERS }}
+          TARGET: ${{ inputs.target }}
+          VERSION: ${{ inputs.version }}
+          EXCLUDE: ${{ inputs.exclude_prs }}
+          DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: python3 -I .github/scripts/release.py release "$TARGET" --version "$VERSION" --exclude "$EXCLUDE" $DRY_RUN

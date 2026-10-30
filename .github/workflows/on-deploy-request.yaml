@@ -14,18 +14,12 @@ on:
         description: "The image/artifact tag that is to be deployed to the target environment"
         type: string
         required: true
-      emergency_reason: # lab: new release-flow input
-        description: "prd only: deploy without UAT sign-off. Give the incident and reason."
-        type: string
-        required: false
-        default: ""
 
 permissions:
   contents: read
   id-token: write
   packages: read # lab: images come from GHCR instead of ECR
   deployments: write # lab: ecs_deploy stand-in records what each env runs
-  statuses: read # lab: release_gate reads the uat-signoff status
 
 jobs:
   validation:
@@ -41,22 +35,8 @@ jobs:
           repo_name: ${{ vars.ECR_REPO_NAME }}
           role_to_assume: ${{ vars.GHA_ROLE_ARN }}
 
-  release_gate: # lab: new release-flow job; prd only takes a UAT-signed image
-    runs-on:
-      - ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Check UAT sign-off
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_MANAGERS: ${{ vars.RELEASE_MANAGERS }}
-          TARGET_ENV: ${{ inputs.environment }}
-          IMAGE_TAG: ${{ inputs.image_tag }}
-          EMERGENCY: ${{ inputs.emergency_reason }}
-        run: python3 -I .github/scripts/release.py release-gate "$TARGET_ENV" "$IMAGE_TAG" --emergency "$EMERGENCY"
-
   deploy:
-    needs: [validation, release_gate] # lab: real is "needs: validation"
+    needs: validation
     runs-on:
       - ubuntu-latest # lab: real runner is a self-hosted org runner
     environment: ${{ inputs.environment }}

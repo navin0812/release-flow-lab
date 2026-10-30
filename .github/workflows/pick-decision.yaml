@@ -1,5 +1,6 @@
-# Release flow: every PR to main needs a pick decision label.
-# Required status check "pick-decision" (ruleset on main).
+# Release flow: every open PR to main needs a pick decision label.
+# On open, adds pick/release/vX.Y.Z for the open mainline release.
+# Opt out with pick/none. Required status check "pick-decision" (ruleset on main).
 name: Pick decision
 
 on:
@@ -10,11 +11,17 @@ on:
 
 permissions:
   contents: read
+  issues: write # create the pick label if missing
+  pull-requests: write # add the pick label
 
 jobs:
   pick-decision:
+    # Label edits on merged PRs (to drop them from a release) must not re-run the check.
+    if: github.event.pull_request.state == 'open'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Check pick label
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: python3 -I .github/scripts/release.py check-labels
