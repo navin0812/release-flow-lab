@@ -1,2 +1,3 @@
 Adding new lines here to test squash and merge.
 Adding a new workflow.
+Adding a new workflow.
