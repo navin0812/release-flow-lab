@@ -42,6 +42,7 @@ jobs:
       contents: write # push branch and tags, create releases
       issues: write # create and delete pick labels
       pull-requests: write # add and remove pick labels
+      actions: write # rerun pick-decision on PRs that 'start' labels
     outputs:
       build_tag: ${{ steps.release.outputs.build_tag }}
     steps:

@@ -17,7 +17,7 @@ Two goals shape every change:
 **State lives in GitHub, not in files.** Do not add state files.
 - prd baseline: the newest `vX.Y.Z` tag.
 - Open releases: branches `release/vX.Y.Z`, each cut from the prd tag before it. Mainline = newest open branch with patch 0; hotfix = patch > 0.
-- Pick decision: PR labels `pick/release/vX.Y.Z` or `pick/none`. `pick-decision` adds the mainline label on PR open/reopen; it skips closed PRs.
+- Pick decision: PR labels `pick/release/vX.Y.Z` or `pick/none`. `pick-decision` adds the mainline label on PR open/reopen and skips closed PRs. It fails a PR with no pick label, also when no release is open. It reads labels live (a rerun reuses the old event payload). `start` labels open PRs and reruns their check, because labels added with `GITHUB_TOKEN` start no workflow.
 - Pick result: `-x` trailers ("cherry picked from commit") and revert commits on the release branch, read by `contains()`. `pick-conflict/release/vX.Y.Z` marks a PR that did not apply.
 
 **Release lifecycle (Release flow `target`):**

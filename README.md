@@ -25,7 +25,7 @@ On deploy request      environment prd, image_tag vX.Y.Z-amd64
 
 | Workflow | Trigger | What |
 | --- | --- | --- |
-| Pick decision | open PR to `main` (required check) | On open, adds the label of the open mainline release. Passes with `pick/release/vX.Y.Z` or `pick/none`. |
+| Pick decision | open PR to `main` (required check) | On open, adds the label of the open mainline release. Passes with `pick/release/vX.Y.Z` or `pick/none`. **Fails with no label, even when no release is open**; `start` then labels the PR and reruns the check. |
 | Release flow | manual: `target` start / uat / prd | See above. `version` is optional. `exclude_prs` drops merged PRs from the release. `dry_run` pushes nothing. Its `build-x86` job builds `<tag>-amd64`, because releases made with `GITHUB_TOKEN` do not start On release. Rerun `uat` with no changes to rebuild a missing rc image. |
 | On release | release published by a person | Builds `<tag>-amd64`. Production mirror; Release flow does not use it. |
 | On deploy request | manual | Deploys an image tag to an environment. |

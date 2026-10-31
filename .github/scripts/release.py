@@ -132,8 +132,21 @@ def merged_prs():
 
 def open_prs():
     rows = json.loads(run("gh", "pr", "list", "--repo", REPO, "--state", "open", "--base", "main",
-                          "--limit", "1000", "--json", "number,labels"))
-    return {r["number"]: {l["name"] for l in r["labels"]} for r in rows}
+                          "--limit", "1000", "--json", "number,labels,headRefName"))
+    return {r["number"]: {"labels": {l["name"] for l in r["labels"]}, "head": r["headRefName"]}
+            for r in rows}
+
+
+def recheck_pick_decision(head):
+    """Rerun the last pick-decision run of a PR branch.
+
+    Labels added with GITHUB_TOKEN start no workflow, so a check that failed
+    for "no label" would stay red after 'start' labels the PR.
+    """
+    rows = json.loads(run("gh", "run", "list", "--repo", REPO, "--workflow", "pick-decision.yaml",
+                          "--branch", head, "--limit", "1", "--json", "databaseId"))
+    if rows:
+        run("gh", "run", "rerun", str(rows[0]["databaseId"]), "--repo", REPO, check=False)
 
 
 def contains(ref, prs):
@@ -191,7 +204,10 @@ def on_conflict(pr, op, branch, dry_run):
 def cmd_check_labels(a):
     event = json.load(open(os.environ["GITHUB_EVENT_PATH"]))
     pr = event["pull_request"]
-    picks = sorted(l["name"] for l in pr["labels"] if l["name"].startswith(PICK))
+    # Read labels live: a rerun of this check reuses the old event payload.
+    labels = json.loads(run("gh", "pr", "view", str(pr["number"]), "--repo", REPO,
+                            "--json", "labels"))["labels"]
+    picks = sorted(l["name"] for l in labels if l["name"].startswith(PICK))
     releases = open_releases()
 
     if not picks and event["action"] in ("opened", "reopened"):
@@ -203,10 +219,11 @@ def cmd_check_labels(a):
             say(f"- added `{picks[0]}` (open release). Add `{NONE}` instead to keep this PR out.")
 
     if not picks:
-        if not mainline(releases):
-            say("✅ no release is open; 'Release flow → start' labels this PR later")
-            return
-        fail(f"No pick label. Add `{pick_label(mainline(releases))}` to ship it, "
+        ver = mainline(releases)
+        if not ver:
+            fail(f"No pick label, and no release is open. Run 'Release flow → start' "
+                 f"(it labels this PR and reruns this check), or add `{NONE}` to keep it on main only.")
+        fail(f"No pick label. Add `{pick_label(ver)}` to ship it, "
              f"or `{NONE}` to keep it on main only.")
     if NONE in picks and len(picks) > 1:
         fail(f"{NONE} cannot be combined with {', '.join(p for p in picks if p != NONE)}")
@@ -256,12 +273,13 @@ def start(a):
         fail(f"release/v{mainline(releases)} is still open; ship it to prd first")
 
     # Mainline: label every PR not yet in prd that has no pick decision.
-    backlog = []
+    backlog, opens = [], {}
     if not hotfix:
         prs = merged_prs()
         in_prd = contains(base, prs)
+        opens = {n: v["head"] for n, v in open_prs().items() if not has_pick(v["labels"])}
         backlog = sorted([n for n, v in prs.items() if n not in in_prd and not has_pick(v["labels"])]
-                         + [n for n, labels in open_prs().items() if not has_pick(labels)])
+                         + list(opens))
 
     say(f"- cut `{branch}` from prd tag `{base}`" + (" (hotfix: label its PRs by hand)" if hotfix else ""))
     say(f"- label `{pick_label(ver)}` on: {', '.join(f'#{n}' for n in backlog) or 'none'}")
@@ -271,6 +289,10 @@ def start(a):
     ensure_label(ver)
     for n in backlog:
         add_label(n, pick_label(ver))
+    for head in opens.values():
+        recheck_pick_decision(head)
+    if opens:
+        say(f"- reran pick-decision on open PRs: {', '.join(f'#{n}' for n in opens)}")
     say(f"**Next:** merge PRs as usual, then run 'Release flow → uat'.")
 
 
