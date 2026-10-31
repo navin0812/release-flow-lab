@@ -7,7 +7,6 @@ on:
     types:
       - released
       - prereleased
-  workflow_dispatch: # lab: Release flow dispatches this on the tag; releases made with GITHUB_TOKEN start no runs
 
 permissions:
   contents: read

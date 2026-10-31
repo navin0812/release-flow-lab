@@ -316,16 +316,24 @@ def sync(ver, a):
     return branch, base, bool(to_pick or to_revert), exclude, notes
 
 
-def publish(tag, notes, prerelease):
-    """Create the GitHub release, then start the image build.
+def build_image(tag):
+    """Hand tag to the workflow's build job, which builds <tag>-amd64.
 
-    A release made with GITHUB_TOKEN does not trigger 'On release', but
-    workflow_dispatch does, so dispatch it on the tag.
+    A release made with GITHUB_TOKEN does not trigger 'On release', and a
+    dispatch on the tag would run the workflow file from the release branch
+    (cut from an older prd tag). So Release flow builds the image itself.
     """
+    out = os.environ.get("GITHUB_OUTPUT")
+    if out:
+        with open(out, "a") as f:
+            f.write(f"build_tag={tag}\n")
+
+
+def publish(tag, notes, prerelease):
     run("gh", "release", "create", tag, "--repo", REPO, "--verify-tag", "--title", tag, "--notes", notes,
         "--prerelease" if prerelease else "--latest")
-    run("gh", "workflow", "run", "on-release.yaml", "--repo", REPO, "--ref", tag)
-    say(f"- published `{tag}` and started 'On release' (builds `{tag}-amd64`)")
+    build_image(tag)
+    say(f"- published `{tag}`; the build job builds `{tag}-amd64`")
 
 
 def uat(a):
@@ -335,6 +343,9 @@ def uat(a):
         here = [t for t in git("tag", "--points-at", "HEAD").split() if t.startswith(f"v{ver}-rc.")]
         if here:
             say(f"= no change: `{branch}` is already `{here[0]}`")
+            if not a.dry_run:
+                build_image(here[0])
+                say(f"- rebuilding `{here[0]}-amd64` (repairs a missing image)")
             return
         if git("rev-parse", "HEAD") == git("rev-parse", f"{base}^{{commit}}"):
             fail(f"nothing to ship: `{branch}` equals `{base}`. Label PRs `{pick_label(ver)}` first.")
