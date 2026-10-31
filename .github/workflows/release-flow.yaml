@@ -29,12 +29,7 @@ on:
         type: boolean
         default: false
 
-permissions:
-  contents: write # push branch and tags, create releases
-  issues: write # create and delete pick labels
-  pull-requests: write # add and remove pick labels
-  packages: write # build job pushes the image to GHCR
-  id-token: write # build job: same as on-release
+permissions: {} # each job sets its own
 
 concurrency:
   group: release-flow
@@ -43,6 +38,10 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # push branch and tags, create releases
+      issues: write # create and delete pick labels
+      pull-requests: write # add and remove pick labels
     outputs:
       build_tag: ${{ steps.release.outputs.build_tag }}
     steps:
@@ -62,21 +61,32 @@ jobs:
 
   # Same build as on-release, on the tag just published. Releases made with
   # GITHUB_TOKEN start no 'On release' run, so this job stands in for it.
+  # The build action comes from this workflow's ref (main); the tag is only
+  # the build context, checked out into src/.
   build-x86:
     needs: release
     if: needs.release.outputs.build_tag != ''
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # push the image to GHCR
+      id-token: write # same as on-release
     steps:
       - uses: actions/checkout@v4
         with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
           ref: refs/tags/${{ needs.release.outputs.build_tag }}
+          path: src
+          persist-credentials: false
       - name: Build Docker image
         uses: ./.github/actions/docker_build_push
         with:
           docker_meta_tags: type=raw,value=${{ needs.release.outputs.build_tag }},suffix=-amd64
-          docker_build_context: ${{ github.workspace }}
+          docker_build_context: ${{ github.workspace }}/src
           docker_build_platforms: linux/amd64
-          dockerfile_path: ${{ github.workspace }}/Dockerfile
+          dockerfile_path: ${{ github.workspace }}/src/Dockerfile
           ecr_registries: "unused"
           ecr_uri: ${{ vars.ECR_URI }}
           role_to_assume: ${{ vars.GHA_ROLE_ARN }}
