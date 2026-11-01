@@ -45,6 +45,14 @@ def git(*args, check=True):
     return run("git", *args, check=check)
 
 
+def api(path, method="GET", body=None):
+    args = ["gh", "api", "-X", method, path]
+    if body is not None:
+        args += ["--input", "-"]
+    out = run(*args, stdin=json.dumps(body) if body is not None else None)
+    return json.loads(out) if out else None
+
+
 def say(msg=""):
     print(msg)
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
@@ -285,7 +293,10 @@ def start(a):
     say(f"- label `{pick_label(ver)}` on: {', '.join(f'#{n}' for n in backlog) or 'none'}")
     if a.dry_run:
         return
-    git("push", "-q", "origin", f"{base}^{{commit}}:refs/heads/{branch}")
+    # Create the ref through the API. A git push of this commit is refused for
+    # GITHUB_TOKEN when the tag holds workflow files that differ from main.
+    api(f"repos/{REPO}/git/refs", "POST",
+        {"ref": f"refs/heads/{branch}", "sha": git("rev-parse", f"{base}^{{commit}}")})
     ensure_label(ver)
     for n in backlog:
         add_label(n, pick_label(ver))
