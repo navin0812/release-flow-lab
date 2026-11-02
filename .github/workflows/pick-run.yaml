@@ -1,0 +1,50 @@
+# pick-run: one pick run (real, or dry). Called by auto-cherry-pick. Do not run it by hand.
+name: pick-run
+
+on:
+  workflow_call:
+    inputs:
+      branch:
+        type: string
+        required: true
+      label:
+        type: string
+        default: ""
+      exclude_prs:
+        type: string
+        default: ""
+      dry_run:
+        type: boolean
+        required: true
+
+permissions: {} # the job sets its own
+
+jobs:
+  pick:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the picks to the branch
+      pull-requests: read # list the labelled PRs
+    steps:
+      # The script comes from the default branch: the target branch can be old and have none.
+      - uses: actions/checkout@v4
+        with:
+          path: tool
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+          path: branch
+          fetch-depth: 0
+      - name: Pick
+        working-directory: branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ inputs.branch }}
+          LABEL: ${{ inputs.label }}
+          EXCLUDE: ${{ inputs.exclude_prs }}
+          DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python3 -I ../tool/.github/scripts/pick.py "$BRANCH" --label "$LABEL" --exclude "$EXCLUDE" $DRY_RUN

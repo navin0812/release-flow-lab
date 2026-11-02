@@ -3,6 +3,12 @@
 #   run this workflow: the picked PRs show in the run summary
 # One run does all of it or nothing: a conflict, or a PR that changes workflow
 # files, stops the run and pushes nothing. Tag and release in the GitHub UI.
+#
+# dry_run=true: the run shows the preview, then waits. Open the run, click
+# "Review deployments", approve "pick-confirm" to pick for real with the same
+# inputs. Reject to stop. The real run reads the labels again, so it can differ
+# from the preview if a PR was merged or labelled in between.
+# One-time setup: environment "pick-confirm" with Required reviewers.
 name: auto-cherry-pick
 run-name: auto-cherry-pick onto ${{ inputs.branch }}${{ inputs.dry_run && ' (dry run)' || '' }} by @${{ github.actor }}
 
@@ -24,42 +30,68 @@ on:
         required: false
         default: ""
       dry_run:
-        description: "Show what would be picked; push nothing"
+        description: "Show what would be picked, then wait for your approval to pick for real"
         type: boolean
         default: false
 
-permissions: {} # the job sets its own
+permissions: {} # the jobs set their own
 
 concurrency:
   group: pick-${{ inputs.branch }}
   cancel-in-progress: false
 
 jobs:
-  pick:
+  # Fail early, before any pick: without required reviewers the confirm job
+  # would pass at once and the real pick would run with no click.
+  guard:
+    if: inputs.dry_run
     runs-on: ubuntu-latest
     permissions:
-      contents: write # push the picks to the branch
-      pull-requests: read # list the labelled PRs
+      contents: read
     steps:
-      # The script comes from the default branch: the target branch can be old and have none.
-      - uses: actions/checkout@v4
-        with:
-          path: tool
-          persist-credentials: false
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.branch }}
-          path: branch
-          fetch-depth: 0
-      - name: Pick
-        working-directory: branch
+      - name: Check environment pick-confirm has required reviewers
         env:
           GH_TOKEN: ${{ github.token }}
-          BRANCH: ${{ inputs.branch }}
-          LABEL: ${{ inputs.label }}
-          EXCLUDE: ${{ inputs.exclude_prs }}
-          DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          python3 -I ../tool/.github/scripts/pick.py "$BRANCH" --label "$LABEL" --exclude "$EXCLUDE" $DRY_RUN
+          set -o pipefail
+          if ! gh api "repos/$GITHUB_REPOSITORY/environments/pick-confirm" --jq '.protection_rules[].type' | grep -qx required_reviewers; then
+            echo "::error::Environment pick-confirm is missing or has no required reviewers. Create it (Settings > Environments) before using dry_run."
+            exit 1
+          fi
+
+  preview:
+    needs: guard
+    if: inputs.dry_run
+    permissions:
+      contents: write
+      pull-requests: read
+    uses: ./.github/workflows/pick-run.yaml
+    with:
+      branch: ${{ inputs.branch }}
+      label: ${{ inputs.label }}
+      exclude_prs: ${{ inputs.exclude_prs }}
+      dry_run: true
+
+  # The button: this job waits until a required reviewer approves it.
+  confirm:
+    needs: preview
+    if: inputs.dry_run
+    runs-on: ubuntu-latest
+    environment: pick-confirm
+    permissions: {}
+    steps:
+      - run: echo "Approved. Picking for real."
+
+  pick:
+    needs: confirm
+    # Not a dry run: runs at once. Dry run: runs only after confirm succeeds.
+    if: ${{ !cancelled() && (!inputs.dry_run || needs.confirm.result == 'success') }}
+    permissions:
+      contents: write
+      pull-requests: read
+    uses: ./.github/workflows/pick-run.yaml
+    with:
+      branch: ${{ inputs.branch }}
+      label: ${{ inputs.label }}
+      exclude_prs: ${{ inputs.exclude_prs }}
+      dry_run: false

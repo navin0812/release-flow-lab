@@ -19,7 +19,7 @@ auto-cherry-pick cherry-picks the labelled PRs onto that branch. Everything else
 
 | Workflow | Trigger | What |
 | --- | --- | --- |
-| auto-cherry-pick | manual: `branch`, optional `label`, `exclude_prs`, `dry_run` | Cherry-picks (`-x`) the merged PRs that carry label `pick/<branch>` onto the branch, in `main` merge order. All or nothing: a conflict, or a PR that changes `.github/workflows/`, stops the run and pushes nothing. The result is in the run summary. Standalone: does not tag, release or build. |
+| auto-cherry-pick | manual: `branch`, optional `label`, `exclude_prs`, `dry_run` | Cherry-picks (`-x`) the merged PRs that carry label `pick/<branch>` onto the branch, in `main` merge order. All or nothing: a conflict, or a PR that changes `.github/workflows/`, stops the run and pushes nothing. The result is in the run summary. With `dry_run`, the run shows the preview, then waits: click "Review deployments" and approve `pick-confirm` to pick for real with the same inputs (needs environment `pick-confirm` with required reviewers; runs `pick-run.yaml`). Standalone: does not tag, release or build. |
 | Pick label | open PR to `main` | Passes if a label starts with `pick/release/` and has more after it (`pick/release/v2.40.0`) **and** the branch `release/<same part>` exists, or if the PR has `pick/none` (main only, no branch lookup). The two together fail. Creating a branch starts no run: re-run the check after it. Adds no labels. Advisory: it shows red, it cannot block the merge without a ruleset. |
 | On release | release published by a person | Builds `<tag>-amd64`. Production mirror. |
 | On deploy request | manual | Deploys an image tag to an environment. |
