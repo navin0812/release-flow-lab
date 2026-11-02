@@ -4,13 +4,14 @@
 # One run does all of it or nothing: a conflict, or a PR that changes workflow
 # files, stops the run and pushes nothing. Tag and release in the GitHub UI.
 #
-# dry_run=true: the run shows the preview, then waits. Open the run, click
-# "Review deployments", approve "pick-confirm" to pick for real with the same
-# inputs. Reject to stop. The real run reads the labels again, so it can differ
-# from the preview if a PR was merged or labelled in between.
+# Every run goes through a gate: it shows a preview (dry run), then waits.
+# Open the run, click "Review deployments", approve "pick-confirm" to pick for
+# real with the same inputs. Reject to stop: the preview is all you get.
+# The real run reads the labels again, so it can differ from the preview if a
+# PR was merged or labelled in between.
 # One-time setup: environment "pick-confirm" with Required reviewers.
 name: auto-cherry-pick
-run-name: auto-cherry-pick onto ${{ inputs.branch }}${{ inputs.dry_run && ' (dry run)' || '' }} by @${{ github.actor }}
+run-name: auto-cherry-pick onto ${{ inputs.branch }} by @${{ github.actor }}
 
 on:
   workflow_dispatch:
@@ -29,10 +30,6 @@ on:
         type: string
         required: false
         default: ""
-      dry_run:
-        description: "Show what would be picked, then wait for your approval to pick for real"
-        type: boolean
-        default: false
 
 permissions: {} # the jobs set their own
 
@@ -44,7 +41,6 @@ jobs:
   # Fail early, before any pick: without required reviewers the confirm job
   # would pass at once and the real pick would run with no click.
   guard:
-    if: inputs.dry_run
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -55,13 +51,12 @@ jobs:
         run: |
           set -o pipefail
           if ! gh api "repos/$GITHUB_REPOSITORY/environments/pick-confirm" --jq '.protection_rules[].type' | grep -qx required_reviewers; then
-            echo "::error::Environment pick-confirm is missing or has no required reviewers. Create it (Settings > Environments) before using dry_run."
+            echo "::error::Environment pick-confirm is missing or has no required reviewers. Create it (Settings > Environments) before running this workflow."
             exit 1
           fi
 
   preview:
     needs: guard
-    if: inputs.dry_run
     permissions:
       contents: write
       pull-requests: read
@@ -75,7 +70,6 @@ jobs:
   # The button: this job waits until a required reviewer approves it.
   confirm:
     needs: preview
-    if: inputs.dry_run
     runs-on: ubuntu-latest
     environment: pick-confirm
     permissions: {}
@@ -84,8 +78,6 @@ jobs:
 
   pick:
     needs: confirm
-    # Not a dry run: runs at once. Dry run: runs only after confirm succeeds.
-    if: ${{ !cancelled() && (!inputs.dry_run || needs.confirm.result == 'success') }}
     permissions:
       contents: write
       pull-requests: read
