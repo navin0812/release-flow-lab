@@ -1,0 +1,65 @@
+# auto-cherry-pick: cherry-pick the merged PRs that carry a label onto a branch.
+#   label PRs pick/<branch> (or any label, via the label input)
+#   run this workflow: the picked PRs show in the run summary
+# One run does all of it or nothing: a conflict, or a PR that changes workflow
+# files, stops the run and pushes nothing. Tag and release in the GitHub UI.
+name: auto-cherry-pick
+run-name: auto-cherry-pick onto ${{ inputs.branch }}${{ inputs.dry_run && ' (dry run)' || '' }} by @${{ github.actor }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to pick onto, e.g. feature/CRAH-4536 or release/v2.40.0. It must exist."
+        type: string
+        required: true
+      label:
+        description: "Label that selects the PRs. Empty: pick/<branch>"
+        type: string
+        required: false
+        default: ""
+      exclude_prs:
+        description: "Merged PR numbers to skip in this run, e.g. 12,15"
+        type: string
+        required: false
+        default: ""
+      dry_run:
+        description: "Show what would be picked; push nothing"
+        type: boolean
+        default: false
+
+permissions: {} # the job sets its own
+
+concurrency:
+  group: pick-${{ inputs.branch }}
+  cancel-in-progress: false
+
+jobs:
+  pick:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the picks to the branch
+      pull-requests: read # list the labelled PRs
+    steps:
+      # The script comes from the default branch: the target branch can be old and have none.
+      - uses: actions/checkout@v4
+        with:
+          path: tool
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+          path: branch
+          fetch-depth: 0
+      - name: Pick
+        working-directory: branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ inputs.branch }}
+          LABEL: ${{ inputs.label }}
+          EXCLUDE: ${{ inputs.exclude_prs }}
+          DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python3 -I ../tool/.github/scripts/pick.py "$BRANCH" --label "$LABEL" --exclude "$EXCLUDE" $DRY_RUN
