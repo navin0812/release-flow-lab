@@ -37,6 +37,8 @@ Two goals shape every change:
 
 **Pick workflow (`pick.yaml` + `pick.py`).** Standalone and cherry-pick only: no tags, releases, builds, or release managers. A person tags and releases in the GitHub UI. Input: label `pick/<branch>` (or `label`) selects merged PRs; `exclude_prs` only excludes. One run does all or nothing: a conflict, or a PR that changes `.github/workflows/`, stops the run and pushes nothing (`GITHUB_TOKEN` cannot push workflow files). It writes no labels and shows its result in the run summary. It checks out the script from the default branch and the target branch separately, because old branches have no script. Plan and decisions are in the owner's notes (`Pick Tool Plan`). Squash merges only; do not add rebase-merge handling without asking.
 
+**Pick label check (`pick-label.yaml` + `pick_label.py`).** Standalone, separate from `pick-decision` (which belongs to the Release flow and needs an open `release/vX.Y.Z`). On every PR to `main` (opened, reopened, synchronize, labeled, unlabeled) it passes only if some label starts with `pick/release/` and has something after it; the version part can be anything. It adds no labels, reads the labels live, and is advisory (a required check needs a ruleset, which needs admin). `pick/none` does **not** pass: change `PREFIX` handling in `check()` if that opt-out is wanted.
+
 ## Commands
 
 To exercise changes, run workflows on GitHub:

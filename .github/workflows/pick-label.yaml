@@ -1,0 +1,29 @@
+# Pick label: every open PR to main needs a release label, so it is clear which
+# release it ships in. The label must start with pick/release/ (the rest can be
+# anything, e.g. pick/release/v2.40.0). The check adds no labels: a person picks.
+# The Pick workflow later cherry-picks the PRs that carry the label.
+name: Pick label
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+
+permissions: {} # the job sets its own
+
+jobs:
+  pick-label:
+    # Label edits on merged PRs (to drop them from a release) must not re-run the check.
+    if: github.event.pull_request.state == 'open'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # check out the script
+      pull-requests: read # read the labels
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check release label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: python3 -I .github/scripts/pick_label.py
