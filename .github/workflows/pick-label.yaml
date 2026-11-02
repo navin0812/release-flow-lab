@@ -1,7 +1,9 @@
 # Pick label: every open PR to main needs a pick decision, so it is clear which
 # release it ships in. The label must start with pick/release/ (the rest can be
-# anything, e.g. pick/release/v2.40.0), or be pick/none (stays on main only; it
-# cannot be combined with a release label). The check adds no labels: a person picks.
+# anything, e.g. pick/release/v2.40.0) and the branch release/<same part> must
+# exist (label and branch match 1:1). Or the label is pick/none (stays on main
+# only; it cannot be combined with a release label). The check adds no labels:
+# a person picks. Creating a branch starts no run: re-run the check after it.
 # The Pick workflow later cherry-picks the PRs that carry the label.
 name: Pick label
 
@@ -19,11 +21,11 @@ jobs:
     if: github.event.pull_request.state == 'open'
     runs-on: ubuntu-latest
     permissions:
-      contents: read # check out the script
+      contents: read # check out the script, look up the release branch
       pull-requests: read # read the labels
     steps:
       - uses: actions/checkout@v4
-      - name: Check release label
+      - name: Check release label and branch
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
