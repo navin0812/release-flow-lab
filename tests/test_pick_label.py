@@ -37,9 +37,24 @@ class CheckTest(unittest.TestCase):
         self.assertFalse(self.ok(["pick/release"]))
 
     def test_other_pick_labels_fail(self):
-        for label in ["pick/none", "pick/feature/CRAH-4536", "pick/uat", "picked/release/v1",
+        for label in ["pick/feature/CRAH-4536", "pick/uat", "picked/release/v1", "pick/none/x",
                       "pick-conflict/release/v1", "Pick/release/v1", "release/v1", "xpick/release/v1"]:
             self.assertFalse(self.ok([label]), label)
+
+    def test_pick_none_passes(self):
+        ok, msg = pick_label.check(["pick/none"])
+        self.assertTrue(ok)
+        self.assertIn("pick/none", msg)
+        self.assertTrue(self.ok(["bug", "pick/none"]))
+
+    def test_pick_none_with_a_release_label_fails(self):
+        ok, msg = pick_label.check(["pick/none", "pick/release/v1"])
+        self.assertFalse(ok)
+        self.assertIn("pick/none", msg)
+        self.assertIn("pick/release/v1", msg)
+
+    def test_failure_message_offers_pick_none(self):
+        self.assertIn("pick/none", pick_label.check(["bug"])[1])
 
     def test_message_names_the_near_miss(self):
         ok, msg = pick_label.check(["picked/release/v1", "bug"])
