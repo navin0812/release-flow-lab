@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-`release-flow-lab` is a test repo (GitHub: `navin0812/release-flow-lab`) for a cherry-pick + label release flow. It is not a real app. `app/*.txt` and the `Dockerfile` (busybox) are stand-ins so that images can be built and "deployed". There is no build system, linter, or test suite. All logic is GitHub Actions YAML plus one Python script.
+`release-flow-lab` is a test repo (GitHub: `navin0812/release-flow-lab`) for a cherry-pick + label release flow. It is not a real app. `app/*.txt` and the `Dockerfile` (busybox) are stand-ins so that images can be built and "deployed". There is no build system or linter. All logic is GitHub Actions YAML plus two Python scripts: `release.py` (the Release flow) and `pick.py` (the Pick workflow, the only part meant for contest-wordpress). Only `pick.py` has tests.
 
 Two goals shape every change:
 - Three workflows (`on-push`, `on-release`, `on-deploy-request`) **mirror production files** as closely as possible. Every difference from production must stay marked with a `# lab:` comment. Keep that marker when you edit these files, and do not add unmarked differences.
@@ -35,16 +35,25 @@ Two goals shape every change:
 
 **Conventions:** `release-flow` uses `concurrency: release-flow` (no cancel). Release managers come from repo variable `RELEASE_MANAGERS` (comma-separated logins), checked by `require_release_manager()`. `on_conflict()` in `release.py` is the deliberate policy hook for conflict handling.
 
+**Pick workflow (`pick.yaml` + `pick.py`).** Standalone and cherry-pick only: no tags, releases, builds, or release managers. A person tags and releases in the GitHub UI. Input: label `pick/<branch>` (or `label`) selects merged PRs; `exclude_prs` only excludes. One run does all or nothing: a conflict, or a PR that changes `.github/workflows/`, stops the run and pushes nothing (`GITHUB_TOKEN` cannot push workflow files). It writes no labels and shows its result in the run summary. It checks out the script from the default branch and the target branch separately, because old branches have no script. Plan and decisions are in the owner's notes (`Pick Tool Plan`). Squash merges only; do not add rebase-merge handling without asking.
+
 ## Commands
 
-No build/test commands exist. To exercise changes, run workflows on GitHub:
+To exercise changes, run workflows on GitHub:
 
 ```sh
 gh workflow run release-flow.yaml -f target=uat -f dry_run=true   # dry run pushes nothing
 gh run list --workflow release-flow.yaml -L1
+gh workflow run pick.yaml -f branch=uat-test -f dry_run=true      # Pick: dry run first
 ```
 
-Use `dry_run=true` first when you change `release.py`.
+Use `dry_run=true` first when you change `release.py` or `pick.py`.
+
+Unit tests for `pick.py` (stdlib only, real git in a temp dir, no network, about 25 s):
+
+```sh
+python3 -I -m unittest discover -s tests -v
+```
 
 ## Local-only helpers (untracked, do not commit)
 
