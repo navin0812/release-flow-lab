@@ -1,10 +1,10 @@
-# Pick: cherry-pick the merged PRs that carry a label onto a branch.
+# auto-cherry-pick: cherry-pick the merged PRs that carry a label onto a branch.
 #   label PRs pick/<branch> (or any label, via the label input)
 #   run this workflow: the picked PRs show in the run summary
 # One run does all of it or nothing: a conflict, or a PR that changes workflow
 # files, stops the run and pushes nothing. Tag and release in the GitHub UI.
-name: Pick
-run-name: Pick onto ${{ inputs.branch }}${{ inputs.dry_run && ' (dry run)' || '' }} by @${{ github.actor }}
+name: auto-cherry-pick
+run-name: auto-cherry-pick onto ${{ inputs.branch }}${{ inputs.dry_run && ' (dry run)' || '' }} by @${{ github.actor }}
 
 on:
   workflow_dispatch:

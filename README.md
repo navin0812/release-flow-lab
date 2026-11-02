@@ -2,7 +2,7 @@
 
 Test repo for a cherry-pick + label flow. It mirrors three production
 workflows (`on-push`, `on-release`, `on-deploy-request`) as closely as possible
-and adds the Pick workflows. Tagging, releasing and deploying stay manual. Every difference from production is marked
+and adds the auto-cherry-pick and Pick label workflows. Tagging, releasing and deploying stay manual. Every difference from production is marked
 `# lab:` in the workflow files.
 
 | Production | Lab stand-in |
@@ -15,11 +15,11 @@ and adds the Pick workflows. Tagging, releasing and deploying stay manual. Every
 ## Pick flow
 
 A person labels a merged PR `pick/<branch>` (for a release branch: `pick/release/vX.Y.Z`).
-Pick cherry-picks the labelled PRs onto that branch. Everything else is manual.
+auto-cherry-pick cherry-picks the labelled PRs onto that branch. Everything else is manual.
 
 | Workflow | Trigger | What |
 | --- | --- | --- |
-| Pick | manual: `branch`, optional `label`, `exclude_prs`, `dry_run` | Cherry-picks (`-x`) the merged PRs that carry label `pick/<branch>` onto the branch, in `main` merge order. All or nothing: a conflict, or a PR that changes `.github/workflows/`, stops the run and pushes nothing. The result is in the run summary. Standalone: does not tag, release or build. |
+| auto-cherry-pick | manual: `branch`, optional `label`, `exclude_prs`, `dry_run` | Cherry-picks (`-x`) the merged PRs that carry label `pick/<branch>` onto the branch, in `main` merge order. All or nothing: a conflict, or a PR that changes `.github/workflows/`, stops the run and pushes nothing. The result is in the run summary. Standalone: does not tag, release or build. |
 | Pick label | open PR to `main` | Passes if a label starts with `pick/release/` and has more after it (`pick/release/v2.40.0`) **and** the branch `release/<same part>` exists, or if the PR has `pick/none` (main only, no branch lookup). The two together fail. Creating a branch starts no run: re-run the check after it. Adds no labels. Advisory: it shows red, it cannot block the merge without a ruleset. |
 | On release | release published by a person | Builds `<tag>-amd64`. Production mirror. |
 | On deploy request | manual | Deploys an image tag to an environment. |
