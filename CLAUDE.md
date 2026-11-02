@@ -18,7 +18,7 @@ One goal shapes every change: three workflows (`on-push`, `on-release`, `on-depl
 
 **Stand-ins for production** (`.github/actions/*`): ECR → GHCR, ECS/CodeDeploy → a recorded GitHub Deployment, self-hosted runner → `ubuntu-latest`. The actions keep the same inputs as the org's versions so the workflow files can mirror production.
 
-**Pick workflow (named `auto-cherry-pick`; files `pick.yaml` + `pick.py`).** Standalone and cherry-pick only: no tags, releases, builds, or release managers (none exist in contest-wordpress). A person tags and releases in the GitHub UI. Input: label `pick/<branch>` (or `label`) selects merged PRs; `exclude_prs` only excludes. One run does all or nothing: a conflict, or a PR that changes `.github/workflows/`, stops the run and pushes nothing (`GITHUB_TOKEN` cannot push workflow files). It writes no labels and shows its result in the run summary. It checks out the script from the default branch and the target branch separately, because old branches have no script. Plan and decisions are in the owner's notes (`Pick Tool Plan`). Squash merges only; do not add rebase-merge handling without asking.
+**Pick workflow (files `auto-cherry-pick.yaml` + `pick.py`).** Standalone and cherry-pick only: no tags, releases, builds, or release managers (none exist in contest-wordpress). A person tags and releases in the GitHub UI. Input: label `pick/<branch>` (or `label`) selects merged PRs; `exclude_prs` only excludes. One run does all or nothing: a conflict, or a PR that changes `.github/workflows/`, stops the run and pushes nothing (`GITHUB_TOKEN` cannot push workflow files). It writes no labels and shows its result in the run summary. It checks out the script from the default branch and the target branch separately, because old branches have no script. Plan and decisions are in the owner's notes (`Pick Tool Plan`). Squash merges only; do not add rebase-merge handling without asking.
 
 **Pick label check (`pick-label.yaml` + `pick_label.py`).** Standalone. On every PR to `main` (opened, reopened, synchronize, labeled, unlabeled) it passes if some label starts with `pick/release/` and has something after it (the version part can be anything) and the branch `release/<same part>` exists (label and branch match 1:1, the same name Pick uses for `pick/<branch>`), or if the PR has `pick/none` (stays on main only; no branch lookup). `pick/none` plus a release label fails: the two contradict. A missing branch fails; any lookup error other than 404 also fails and is never read as "missing". Creating a branch starts no run, so re-run the check after it. It adds no labels, reads the labels live, and is advisory (a required check needs a ruleset, which needs admin).
 
@@ -27,8 +27,8 @@ One goal shapes every change: three workflows (`on-push`, `on-release`, `on-depl
 To exercise changes, run workflows on GitHub:
 
 ```sh
-gh workflow run pick.yaml -f branch=uat-test -f dry_run=true      # auto-cherry-pick: dry run first
-gh run list --workflow pick.yaml -L1
+gh workflow run auto-cherry-pick.yaml -f branch=uat-test -f dry_run=true      # auto-cherry-pick: dry run first
+gh run list --workflow auto-cherry-pick.yaml -L1
 ```
 
 Use `dry_run=true` first when you change `pick.py`.
