@@ -76,7 +76,7 @@ jobs:
     steps:
       - run: echo "Approved. Picking for real."
 
-  pick:
+  actual:
     needs: confirm
     permissions:
       contents: write
