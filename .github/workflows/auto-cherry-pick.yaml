@@ -5,11 +5,11 @@
 # files, stops the run and pushes nothing. Tag and release in the GitHub UI.
 #
 # Every run goes through a gate: it shows a preview (dry run), then waits.
-# Open the run, click "Review deployments", approve "pick-confirm" to pick for
+# Open the run, click "Review deployments", approve "auto-cherry-pick" to pick for
 # real with the same inputs. Reject to stop: the preview is all you get.
 # The real run reads the labels again, so it can differ from the preview if a
 # PR was merged or labelled in between.
-# One-time setup: environment "pick-confirm" with Required reviewers.
+# One-time setup: environment "auto-cherry-pick" with Required reviewers.
 name: auto-cherry-pick
 run-name: auto-cherry-pick onto ${{ inputs.branch }} by @${{ github.actor }}
 
@@ -45,13 +45,13 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Check environment pick-confirm has required reviewers
+      - name: Check environment auto-cherry-pick has required reviewers
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -o pipefail
-          if ! gh api "repos/$GITHUB_REPOSITORY/environments/pick-confirm" --jq '.protection_rules[].type' | grep -qx required_reviewers; then
-            echo "::error::Environment pick-confirm is missing or has no required reviewers. Create it (Settings > Environments) before running this workflow."
+          if ! gh api "repos/$GITHUB_REPOSITORY/environments/auto-cherry-pick" --jq '.protection_rules[].type' | grep -qx required_reviewers; then
+            echo "::error::Environment auto-cherry-pick is missing or has no required reviewers. Create it (Settings > Environments) before running this workflow."
             exit 1
           fi
 
@@ -71,7 +71,7 @@ jobs:
   confirm:
     needs: preview
     runs-on: ubuntu-latest
-    environment: pick-confirm
+    environment: auto-cherry-pick
     permissions: {}
     steps:
       - run: echo "Approved. Picking for real."
