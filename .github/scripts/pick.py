@@ -13,6 +13,9 @@ with full history, checked out on the target branch). State lives in GitHub:
 One run does all of it or nothing. A conflict, or a PR that changes
 .github/workflows/ (GITHUB_TOKEN cannot push those), stops the run and pushes
 nothing. The repo merges by squash only: one commit per PR.
+
+A dry run also reports drift from main: what main has that the branch lacks,
+and what the branch has that main lacks. It only reports and never fails.
 """
 import argparse
 import json
@@ -24,6 +27,7 @@ from urllib.parse import quote
 
 REPO = os.environ.get("GITHUB_REPOSITORY", "")
 WORKFLOWS = ".github/workflows"
+DRIFT_LIST_MAX = 20  # lines per drift group; a long-lived branch can be hundreds behind
 
 
 # ---------- plumbing ----------
@@ -65,6 +69,15 @@ def merged_prs(label):
             for r in rows if r.get("mergeCommit")}
 
 
+def pr_labels():
+    """Label names of every merged PR to main: {number: [names]}, or None if gh fails."""
+    r = run("gh", "pr", "list", "--repo", REPO, "--state", "merged", "--base", "main",
+            "--limit", "1000", "--json", "number,labels", check=False)
+    if r.returncode != 0:
+        return None
+    return {x["number"]: [l["name"] for l in x["labels"]] for x in json.loads(r.stdout)}
+
+
 def is_ancestor(a, b):
     return git("merge-base", "--is-ancestor", a, b, check=False).returncode == 0
 
@@ -100,8 +113,11 @@ def is_empty_pick():
 
 # ---------- the pick ----------
 
-def execute(branch, prs, exclude=frozenset(), dry_run=False):
-    """Pick every PR in prs onto HEAD (checked out on branch). Returns the PR numbers picked."""
+def execute(branch, prs, exclude=frozenset(), dry_run=False, labels=None):
+    """Pick every PR in prs onto HEAD (checked out on branch). Returns the PR numbers picked.
+
+    labels: {pr number: [label names]} for the drift report (dry run only); None if unknown.
+    """
     if branch == "main":
         fail("refusing to pick onto main")
     unknown = sorted(n for n in exclude if n not in prs)
@@ -137,6 +153,8 @@ def execute(branch, prs, exclude=frozenset(), dry_run=False):
              f"- push them by hand first, then run again.")
 
     report(branch, prs, exclude, picked, present, applied, dry_run)
+    if dry_run:
+        report_drift(labels)
     if picked and not dry_run:
         git("push", "origin", f"HEAD:refs/heads/{branch}")
     return picked
@@ -155,6 +173,70 @@ def report(branch, prs, exclude, picked, present, applied, dry_run):
         say(f"Excluded: {', '.join(f'#{n}' for n in sorted(exclude))}")
 
 
+# ---------- drift from main ----------
+
+def drift():
+    """Compare HEAD with origin/main since they forked. Returns (main_only, branch_only).
+
+    main_only:   [(pr number or None, subject)] on main, not picked here.
+    branch_only: [subject] on the branch with no `-x` trailer, or one that is not on main.
+    A hand pick has no trailer, so it counts as branch-only and main-only: false drift.
+    """
+    base = git("merge-base", "origin/main", "HEAD")
+    have = picked_sources("HEAD")
+    main_only = []
+    for line in git("log", "--first-parent", "--format=%H %s", f"{base}..origin/main").splitlines():
+        sha, _, subject = line.partition(" ")
+        if sha not in have:
+            m = re.search(r"\(#(\d+)\)\s*$", subject)
+            main_only.append((int(m.group(1)) if m else None, subject))
+
+    on_main = set(git("rev-list", "origin/main").split())
+    branch_only = []
+    log = git("log", "--no-merges", "--format=%s%x1f%b%x1e", f"{base}..HEAD")
+    for entry in filter(str.strip, log.split("\x1e")):
+        subject, _, body = entry.strip().partition("\x1f")
+        src = re.search(r"cherry picked from commit ([0-9a-f]{40})", body)
+        if not src or src.group(1) not in on_main:
+            branch_only.append(subject)
+    return main_only, branch_only
+
+
+def report_drift(labels):
+    """Print the drift section. Never fails the run: a git error is shown, not raised."""
+    try:
+        main_only, branch_only = drift()
+    except SystemExit:
+        return
+    say("## Drift from main")
+
+    def listing(title, rows):
+        if not rows:
+            return
+        shown = rows[:DRIFT_LIST_MAX]
+        more = [f"- ... and {len(rows) - len(shown)} more"] if len(rows) > len(shown) else []
+        say("\n".join([f"**{title} ({len(rows)})**", *shown, *more]))
+
+    if branch_only:
+        listing("On the branch, not from main. The next release from main loses these",
+                [f"- {s}" for s in branch_only])
+    else:
+        say("On the branch, not from main: none.")
+
+    if labels is None:
+        listing("On main, not on the branch (labels unknown)", [f"- {s}" for _, s in main_only])
+        return
+    groups = {"pick label, not on this branch": [], "pick/none": [], "no pick label": []}
+    for n, subject in main_only:
+        names = labels.get(n, [])
+        key = ("pick/none" if "pick/none" in names
+               else "pick label, not on this branch" if any(x.startswith("pick/") for x in names)
+               else "no pick label")
+        groups[key].append(f"- {subject}")
+    for key, rows in groups.items():
+        listing(f"On main, not on the branch: {key}", rows)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("branch")
@@ -164,7 +246,7 @@ def main():
     a = p.parse_args()
     label = a.label or f"pick/{a.branch}"
     exclude = {int(n) for n in re.findall(r"\d+", a.exclude)}
-    execute(a.branch, merged_prs(label), exclude, a.dry_run)
+    execute(a.branch, merged_prs(label), exclude, a.dry_run, pr_labels() if a.dry_run else None)
 
 
 if __name__ == "__main__":
